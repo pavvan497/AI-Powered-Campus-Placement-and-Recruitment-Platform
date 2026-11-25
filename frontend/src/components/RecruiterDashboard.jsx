@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import API from '../services/api';
 import { 
   Building2, PlusCircle, Users, CheckCircle2, AlertCircle, 
-  MapPin, DollarSign, Calendar, Sparkles, RefreshCw, ChevronRight 
+  MapPin, DollarSign, Calendar, Sparkles, RefreshCw, ChevronRight, Briefcase
 } from 'lucide-react';
 
 export default function RecruiterDashboard({ user }) {
@@ -10,6 +10,18 @@ export default function RecruiterDashboard({ user }) {
   const [selectedJob, setSelectedJob] = useState(null);
   const [applicants, setApplicants] = useState([]);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
+
+  const [recruiterProfile, setRecruiterProfile] = useState(null);
+  const [showCompanyModal, setShowCompanyModal] = useState(false);
+  const [submittingCompany, setSubmittingCompany] = useState(false);
+  const [companyForm, setCompanyForm] = useState({
+    companyName: '',
+    industry: 'Technology / IT',
+    website: '',
+    description: '',
+    designation: 'Talent Acquisition Lead',
+    phone: '',
+  });
 
   const [showPostModal, setShowPostModal] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
@@ -29,8 +41,20 @@ export default function RecruiterDashboard({ user }) {
   });
 
   useEffect(() => {
+    fetchProfile();
     fetchJobs();
   }, []);
+
+  const fetchProfile = async () => {
+    try {
+      const res = await API.get('/recruiter/profile');
+      if (res.data && res.data.data) {
+        setRecruiterProfile(res.data.data);
+      }
+    } catch (err) {
+      console.log('No recruiter profile yet', err);
+    }
+  };
 
   const fetchJobs = async () => {
     try {
@@ -58,6 +82,43 @@ export default function RecruiterDashboard({ user }) {
       setMessage({ type: 'error', text: 'Failed to load applicants for this job.' });
     } finally {
       setLoadingApplicants(false);
+    }
+  };
+
+  const handleSetupCompany = async (e) => {
+    e.preventDefault();
+    setSubmittingCompany(true);
+    setMessage({ type: '', text: '' });
+
+    try {
+      // 1. Create company
+      const compRes = await API.post('/companies', {
+        name: companyForm.companyName,
+        industry: companyForm.industry,
+        website: companyForm.website,
+        description: companyForm.description,
+      });
+
+      const companyId = compRes.data.data.id;
+
+      // 2. Create recruiter profile
+      const profRes = await API.post('/recruiter/profile', {
+        companyId: companyId,
+        designation: companyForm.designation,
+        phone: companyForm.phone,
+      });
+
+      setRecruiterProfile(profRes.data.data);
+      setShowCompanyModal(false);
+      setMessage({ type: 'success', text: 'Company & Recruiter Profile created successfully!' });
+    } catch (err) {
+      console.error(err);
+      setMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Failed to setup company & profile.',
+      });
+    } finally {
+      setSubmittingCompany(false);
     }
   };
 
@@ -100,6 +161,14 @@ export default function RecruiterDashboard({ user }) {
     }
   };
 
+  const handleOpenJobModal = () => {
+    if (!recruiterProfile) {
+      setShowCompanyModal(true);
+    } else {
+      setShowPostModal(true);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       
@@ -119,17 +188,45 @@ export default function RecruiterDashboard({ user }) {
         </div>
       )}
 
+      {/* Profile Notice Banner if not configured */}
+      {!recruiterProfile && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Building2 className="w-6 h-6 text-amber-600 shrink-0" />
+            <div>
+              <h4 className="text-sm font-bold text-amber-900">Company Profile Setup Required</h4>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Link your account to a company to post job drives and view candidate AI scores.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowCompanyModal(true)}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl transition-colors shrink-0 shadow-sm"
+          >
+            Setup Company Profile &rarr;
+          </button>
+        </div>
+      )}
+
       {/* Top Action Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Recruiter Management Portal</h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-xl font-bold text-slate-900">Recruiter Management Portal</h2>
+            {recruiterProfile && (
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                {recruiterProfile.companyName}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500">
             Publish campus drives with hard eligibility rules and evaluate AI-ranked talent.
           </p>
         </div>
 
         <button
-          onClick={() => setShowPostModal(true)}
+          onClick={handleOpenJobModal}
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-sm shrink-0"
         >
           <PlusCircle className="w-4 h-4" /> Create New Job Drive
@@ -273,6 +370,120 @@ export default function RecruiterDashboard({ user }) {
           )}
         </div>
       </div>
+
+      {/* Modal: Setup Company & Recruiter Profile */}
+      {showCompanyModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-bold text-slate-900">Setup Company & Profile</h3>
+              </div>
+              <button
+                onClick={() => setShowCompanyModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+              >
+                &times;
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Provide your organization details once to start posting job drives.
+            </p>
+
+            <form onSubmit={handleSetupCompany} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Company Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Google / Microsoft / Infosys"
+                  value={companyForm.companyName}
+                  onChange={(e) => setCompanyForm({ ...companyForm, companyName: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Industry</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Information Technology"
+                    value={companyForm.industry}
+                    onChange={(e) => setCompanyForm({ ...companyForm, industry: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Website</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. https://google.com"
+                    value={companyForm.website}
+                    onChange={(e) => setCompanyForm({ ...companyForm, website: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Your Designation *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. HR Manager / Campus Recruiter"
+                    value={companyForm.designation}
+                    onChange={(e) => setCompanyForm({ ...companyForm, designation: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Phone *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 9876543210"
+                    value={companyForm.phone}
+                    onChange={(e) => setCompanyForm({ ...companyForm, phone: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Company Description</label>
+                <textarea
+                  rows="2"
+                  placeholder="Short overview of your company..."
+                  value={companyForm.description}
+                  onChange={(e) => setCompanyForm({ ...companyForm, description: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowCompanyModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingCompany}
+                  className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm disabled:opacity-60"
+                >
+                  {submittingCompany ? 'Saving...' : 'Save & Continue'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Post New Job Drive */}
       {showPostModal && (
